@@ -8,7 +8,7 @@ use alloy_rpc_types::BlockNumberOrTag;
 use alloy_sol_types::SolCall;
 use alloy_transport::Transport;
 use eyre::{eyre, OptionExt};
-use reth_primitives::{Block, Header};
+use reth_primitives::{Block, BlockHash, BlockNumber, Header};
 use revm::db::CacheDB;
 use revm_primitives::{B256, U256};
 use rsp_mpt::EthereumState;
@@ -16,6 +16,7 @@ use rsp_primitives::account_proof::eip1186_proof_to_account_proof;
 use rsp_rpc_db::RpcDb;
 
 use sp1_cc_client_executor::{io::EVMStateSketch, new_evm, ContractInput};
+use tracing_subscriber::fmt::format::Full;
 
 /// An executor that fetches data from a [`Provider`].
 ///
@@ -31,14 +32,33 @@ pub struct HostExecutor<T: Transport + Clone, P: Provider<T, AnyNetwork> + Clone
     pub provider: P,
 }
 
+enum BlockId {
+    Number(BlockNumberOrTag),
+    Hash(BlockHash),
+}
+
 impl<T: Transport + Clone, P: Provider<T, AnyNetwork> + Clone> HostExecutor<T, P> {
     /// Create a new [`HostExecutor`] with a specific [`Provider`] and [`BlockNumberOrTag`].
-    pub async fn new(provider: P, block_number: BlockNumberOrTag) -> eyre::Result<Self> {
-        let block = provider
-            .get_block_by_number(block_number, true)
-            .await?
+    pub async fn new(provider: P, identifier: T) -> eyre::Result<Self>
+    where
+        T: Into<BlockId>,
+    {
+        let block_id = identifier.into();
+
+        let block1 = match block_id {
+            BlockId::Number(block_number) => {
+                provider.get_block_by_number(block_number, true).await?
+            }
+            BlockId::Hash(block_hash) => {
+                provider
+                    .get_block_by_hash(block_hash, alloy_rpc_types::BlockTransactionsKind::Full)
+                    .await?
+            }
+        };
+
+        let block = block1
             .map(|block| Block::try_from(block.inner))
-            .ok_or(eyre!("couldn't fetch block: {}", block_number))??;
+            .ok_or(eyre!("couldn't fetch block"))??;
 
         let rpc_db = RpcDb::new(provider.clone(), block.header.number);
         Ok(Self { header: block.header, rpc_db, provider })
