@@ -16,7 +16,6 @@ use rsp_primitives::account_proof::eip1186_proof_to_account_proof;
 use rsp_rpc_db::RpcDb;
 
 use sp1_cc_client_executor::{io::EVMStateSketch, new_evm, ContractInput};
-use tracing_subscriber::fmt::format::Full;
 
 /// An executor that fetches data from a [`Provider`].
 ///
